@@ -1,5 +1,7 @@
 # OpenWrt N100 網站及 MySQL
 
+[部署指南](../../../docs/deployment.zh-HK.md#部署範例) · [共用資料庫設定](../../../shared/database/README.md)
+
 呢個範例將網站同共用 MySQL 放喺一部 OpenWrt 主機，並經 SFTP 連到 FnOS。儲存服務停機期間，使用者仍可登入網站，檔案同分享頁會提示稍後重試。
 
 ## 準備本機 SSD
@@ -19,10 +21,10 @@ Docker 資料目錄亦應設喺本機 SSD。建置機可從 repository 根目錄
 docker build --platform linux/amd64 -t "liulianweb:$(git rev-parse --short HEAD)" .
 ```
 
-喺 N100 本機保存本目錄嘅 `compose.yaml` 同設定。
+將 [compose.yaml](compose.yaml) 同 [.env.example](.env.example) 放喺 N100 上同一個目錄。以下 `docker compose` 指令都喺該目錄執行。
 
 1. 複製 `.env.example` 為 `.env`，指定實際映像 tag、與來源相容並已測試嘅 MySQL 版本，以及 SSD 上預先建立嘅獨立資料目錄。全新主庫應使用空目錄。原有資料以備份還原。
-2. 設定 `DB_NAME`、專用 `DB_USER`、`DB_PASSWORD` 同獨立嘅 `MYSQL_ROOT_PASSWORD`。沿用現有網站設定建立 `website.env`，新環境可參考 `../../.env.example`。兩個檔案權限設為 `600`。沿用原有 Session secret、Cookie 名稱同應用加密金鑰。共用主庫連線由 Compose 指向本機容器。
+2. 設定 `DB_NAME`、專用 `DB_USER`、`DB_PASSWORD` 同獨立嘅 `MYSQL_ROOT_PASSWORD`。沿用現有網站設定建立 `website.env`，新環境可參考[網站環境範本](../../.env.example)。兩個檔案權限設為 `600`。沿用原有 Session secret、Cookie 名稱同應用加密金鑰。共用主庫連線由 Compose 指向本機容器。
 3. 喺 `website.env` 設定 FnOS 嘅 SFTP 連線及 host key 指紋。公會設定寫入或其他整合如需額外設定檔，按現有部署以 Compose override 掛載到對應路徑，並維持單一寫入節點。網站啟動所需設定要喺 N100 本地可讀。
 4. `docker compose config --quiet` 驗證設定。先用 `docker compose up -d mysql` 啟動目標資料庫。資料庫初次建立後，修改環境檔內密碼亦須同步更新 MySQL 帳戶。
 

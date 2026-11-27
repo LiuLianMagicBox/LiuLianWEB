@@ -1,10 +1,12 @@
 # HTTPS 反向代理同私網上游
 
+[部署指南](../../../docs/deployment.zh-HK.md#部署範例) · [網站同 Session 設定](../../../docs/configuration.zh-HK.md#網站同-session)
+
 以 Nginx Proxy Manager 作入口時，先設定網站網域、有效嘅來源 HTTPS 憑證同應用程式嘅私有監聽位址。代理要支援 WebSocket，傳送上傳同下載時要關閉 buffering。使用 Cloudflare 或其他外層代理時，只信任已設定嘅入口傳入嘅轉發標頭。存取日誌應避免記錄私人分享同訂閱網址。
 
 ## 驗證網站入口
 
-將 `WEBSITE_ORIGIN` 設為自己網站嘅 HTTPS 網址，再檢查登入頁同應用程式健康狀態。
+將 `WEBSITE_ORIGIN` 設為自己網站嘅 HTTPS 網址，再檢查登入頁同應用程式健康狀態。`/healthz` 成功時回應 HTTP 200 同 `{"status":"ok"}`，資料庫無法存取時回應 503。
 
 ```sh
 curl -fsS "$WEBSITE_ORIGIN/healthz"

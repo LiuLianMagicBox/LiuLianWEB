@@ -1,5 +1,7 @@
 # Router 同 VPS 雙節點部署範例
 
+[部署指南](../../../docs/deployment.zh-HK.md#部署範例) · [多地區 VPS 部署](../multi-region/README.md)
+
 呢套範例由 HAProxy 接收本機 HTTPS 入口代理轉送嘅請求。一般網站流量可分配到 router 同 VPS，內網 API、網站代理同 WebSocket 會送到 router。兩個網站節點需要共用 MySQL、Cookie 名稱同 Session secret。公會設定由單一節點寫入。
 
 ## 準備節點
@@ -19,11 +21,13 @@ FORWARD_DB_PORT=3306
 
 ## 驗證同回退
 
-於 VPS 檢查兩個 unit 同本機網站。於 router 經 HAProxy 多次請求 `/healthz`，查看 `X-LiuLian-Node` 回應標頭。修改 HAProxy 設定之前先用 `haproxy -c -f` 配合實際設定檔路徑驗證。
+先喺 VPS 檢查兩個 unit 同本機網站。
 
 ```sh
 systemctl status liulian-router-tunnel liulian-website
 curl -i http://127.0.0.1:30011/healthz
 ```
 
-如需驗證共用 Session、限流同資料庫並行行為，可在雙節點測試環境嘅 router 上，從 `website-part` 執行 `node deploy/router-vps/verify.js`。返回單節點時，先讓入口只轉送到健康嘅 router 網站，再停止 VPS 網站同隧道。資料庫恢復步驟見 [OpenWrt 部署指南](../openwrt/README.md)。
+再喺 router 經 HAProxy 多次請求 `http://127.0.0.1:30011/healthz`，查看 `X-LiuLian-Node` 回應標頭。重載 HAProxy 前，用 `haproxy -c -f` 配合實際設定檔路徑驗證。
+
+共用 Session、限流同資料庫並行行為可用[雙節點驗證腳本](verify.js)測試。在測試環境嘅 router 上，從 `website-part` 執行 `node deploy/router-vps/verify.js`。返回單節點時，先讓入口只轉送到健康嘅 router 網站，再停止 VPS 網站同隧道。資料庫恢復步驟見 [OpenWrt 部署指南](../openwrt/README.md)。
