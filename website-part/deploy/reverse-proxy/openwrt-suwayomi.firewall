@@ -1,0 +1,13 @@
+# Replace the documentation addresses with the two NetBird peer addresses before use.
+# Append this section to OpenWrt /etc/config/firewall; this is not a full config.
+config rule 'suwayomi_netbird'
+	option name 'Allow-Suwayomi-from-proxy'
+	option src '*'
+	option device 'wt0'
+	option direction 'in'
+	option src_ip '192.0.2.10'
+	option dest_ip '192.0.2.20'
+	option proto 'tcp'
+	option dest_port '4567'
+	option family 'ipv4'
+	option target 'ACCEPT'

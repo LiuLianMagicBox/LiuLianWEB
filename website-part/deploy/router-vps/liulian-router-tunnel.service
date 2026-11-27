@@ -1,0 +1,16 @@
+[Unit]
+Description=LiuLian private database and website tunnel to router
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=simple
+EnvironmentFile=/etc/liulianweb/router-tunnel.env
+ExecStart=/usr/bin/ssh -NT -p ${ROUTER_SSH_PORT} -i /etc/liulianweb/tunnel_key \
+    -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/liulianweb/known_hosts \
+    -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=15 \
+    -L 127.0.0.1:13307:${FORWARD_DB_HOST}:${FORWARD_DB_PORT} -R 127.0.0.1:30013:127.0.0.1:30011 \
+    ${ROUTER_SSH_USER}@${ROUTER_SSH_HOST}
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

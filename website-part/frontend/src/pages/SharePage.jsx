@@ -1,0 +1,261 @@
+import { FileServiceNotice } from '../components/FileServiceNotice.jsx';
+import { t, useLocale } from '../lib/i18n.mjs';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StatusMessage } from '../components/StatusMessage.jsx';
+import { breadcrumbTrail, filesRequest, formatSize, formatTime, joinPath } from '../lib/filesApi.mjs';
+
+// The share code lives in the URL fragment, which never reaches HTTP access
+// logs; it is removed from history as soon as it has been read.
+function initialCode(hash) {
+  return (hash || '').replace(/^#/, '').trim().toLowerCase();
+}
+
+// Native form downloads stream straight to disk instead of buffering the file
+// (or a whole archive) in JavaScript. The current tab shows server errors;
+// a successful attachment download leaves the share page open.
+// Repeated field names become an array.
+function downloadThroughForm(action, fields) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.target = '_self';
+  for (const [name, values] of Object.entries(fields)) {
+    for (const value of [].concat(values)) {
+      const field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = name;
+      field.value = value;
+      form.append(field);
+    }
+  }
+  document.body.append(form);
+  form.submit();
+  form.remove();
+}
+
+export function SharePage({ location = globalThis.location } = {}) {
+  useLocale();
+  const [codeInput, setCodeInput] = useState(() => initialCode(location?.hash));
+  const [share, setShare] = useState(null);
+  const [status, setStatus] = useState({ message: '', tone: '' });
+  const [selected, setSelected] = useState([]);
+  const initialShareCode = useRef(initialCode(location?.hash));
+  const navigation = useRef(0);
+
+  const report = useCallback((message, tone = '') => setStatus({ message, tone }), []);
+
+  const open = useCallback(async (path, requestedCode) => {
+    const serial = navigation.current + 1;
+    navigation.current = serial;
+    report('正在開啟分享…');
+    let data;
+    try { data = await filesRequest('/shared/list', { method: 'POST', body: { code: requestedCode, path } }); }
+    catch (error) {
+      if (serial === navigation.current) throw error;
+      return;
+    }
+    if (serial !== navigation.current) return;
+    setShare({
+      code: requestedCode,
+      path: data.path,
+      name: data.name,
+      directory: data.directory,
+      expiresAt: data.expiresAt,
+      entries: data.entries,
+    });
+    setSelected([]);
+    report('分享已開啟。');
+  }, [report]);
+
+  const run = useCallback(async operation => {
+    try {
+      return await operation();
+    } catch (error) {
+      report(error.message, 'error');
+      return undefined;
+    }
+  }, [report]);
+
+  useEffect(() => {
+    if (initialShareCode.current) {
+      globalThis.history?.replaceState?.(null, '', globalThis.location.pathname);
+      run(() => open('', initialShareCode.current));
+    }
+    return () => { navigation.current++; };
+  }, [open, run]);
+
+  const submitCode = event => {
+    event.preventDefault();
+    run(() => open('', codeInput.trim().toLowerCase()));
+  };
+
+  const download = (path = '') => {
+    if (!share) return;
+    downloadThroughForm('/api/files/shared/download', { code: share.code, path });
+    report('已送出下載請求。若分享已撤銷或檔案不可用，請重新開啟分享確認。');
+  };
+
+  const current = share?.path || '';
+  const breadcrumbs = breadcrumbTrail(current);
+  const rowPaths = (share?.entries || []).map(entry => joinPath(current, entry.name));
+  const allSelected = rowPaths.length > 0 && rowPaths.every(path => selected.includes(path));
+  const toggleSelected = path => setSelected(list => list.includes(path)
+    ? list.filter(item => item !== path)
+    : [...list, path]);
+  const toggleAll = () => setSelected(allSelected ? [] : [...new Set([...selected, ...rowPaths])]);
+
+  // Shares have no session, so the selection travels as repeated form fields
+  // and the browser streams the ZIP straight to disk.
+  const archiveSelection = () => {
+    if (!selected.length) return;
+    downloadThroughForm('/api/files/shared/archive', { code: share.code, paths: selected });
+    report(`已送出打包請求（${selected.length} 個項目），瀏覽器會開始下載 ZIP。`);
+  };
+
+  const archiveWholeShare = () => {
+    // A large folder can fail the ZIP limits after a slow SFTP scan. The
+    // current tab shows that server response instead of hiding it in an iframe.
+    downloadThroughForm('/api/files/shared/archive-all', { code: share.code });
+    report('正在準備整個分享資料夾的 ZIP，資料較多時可能需要等待。');
+  };
+
+  return (
+    <main className="main-content file-page" id="main-content">
+      <header className="file-hero">
+        <div>
+          <p className="panel-kicker">{t("LIULIANBOT SHARE")}</p>
+          <h1>{t("有人與你分享了檔案")}</h1>
+          <p>{t("輸入分享碼即可瀏覽與下載，無需登入。")}</p>
+        </div>
+        <a className="btn btn-outline" href="/files.html">我的檔案</a>
+      </header>
+
+      <FileServiceNotice showLogin />
+      <section className="file-panel">
+        <form id="openShare" onSubmit={submitCode}>
+          <label htmlFor="codeInput">分享碼</label>
+          <div className="file-toolbar">
+            <input
+              id="codeInput"
+              required
+              maxLength="32"
+              autoComplete="off"
+              spellCheck="false"
+              placeholder="貼上 32 字元分享碼"
+              value={codeInput}
+              onChange={event => setCodeInput(event.target.value)}
+            />
+            <button className="btn btn-primary" type="submit">開啟分享</button>
+          </div>
+        </form>
+        <StatusMessage id="fileStatus" message={status.message} tone={status.tone} />
+      </section>
+
+      {share && (
+        <section id="browserPanel" className="file-panel">
+          <h2 id="shareName">{share.name}</h2>
+          <p id="shareExpiry">{`到期時間：${formatTime(share.expiresAt)}`}</p>
+          {share.directory && (
+            <button id="archiveWholeShare" className="btn btn-primary" type="button" onClick={archiveWholeShare}>
+              下載整個分享資料夾
+            </button>
+          )}
+          <nav id="breadcrumbs" aria-label="分享資料夾路徑">
+            <button className="btn btn-outline" type="button" onClick={() => run(() => open('', share.code))}>
+              {share.name}
+            </button>
+            {breadcrumbs.map(part => (
+              <span key={part.path}>
+                <span aria-hidden="true">/</span>
+                  <button className="btn btn-outline" type="button" onClick={() => run(() => open(part.path, share.code))}>
+                  {part.name}
+                </button>
+              </span>
+            ))}
+          </nav>
+          {share.directory && selected.length > 0 && (
+            <div id="selectionTools" className="file-toolbar">
+              <span id="selectionCount">{`已選 ${selected.length} 個項目`}</span>
+              <button id="archiveShared" className="btn btn-primary" type="button" onClick={archiveSelection}>
+                打包成 ZIP 下載
+              </button>
+              <button id="clearSelection" className="btn btn-outline" type="button" onClick={() => setSelected([])}>
+                清除選取
+              </button>
+            </div>
+          )}
+          <div className="file-table-scroll">
+            <table className="file-table">
+              <thead>
+                <tr>
+                  {share.directory && (
+                    <th scope="col" className="file-select-cell">
+                      <input
+                        id="selectAllShared"
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label="選取全部項目"
+                      />
+                    </th>
+                  )}
+                  <th scope="col">名稱</th><th scope="col">大小</th><th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="fileRows">
+                {share.entries.map(entry => (
+                  <tr key={entry.name}>
+                    {share.directory && (
+                      <td className="file-select-cell">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(joinPath(current, entry.name))}
+                          onChange={() => toggleSelected(joinPath(current, entry.name))}
+                          aria-label={`選取 ${entry.name}`}
+                        />
+                      </td>
+                    )}
+                    <td>
+                      {entry.directory ? (
+                        <button
+                          className="file-name"
+                          type="button"
+                          onClick={() => run(() => open(joinPath(current, entry.name), share.code))}
+                        >
+                          {`📁 ${entry.name}`}
+                        </button>
+                      ) : `📄 ${entry.name}`}
+                    </td>
+                    <td>{entry.directory ? '—' : formatSize(entry.size)}</td>
+                    <td>
+                      {!entry.directory && (
+                        <button
+                          className="btn btn-outline"
+                          type="button"
+                          onClick={() => download(joinPath(current, entry.name))}
+                        >
+                          下載
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p id="emptyFiles" hidden={!share.directory || share.entries.length > 0}>{t("此資料夾目前沒有檔案。")}</p>
+          <button
+            id="downloadSharedFile"
+            className="btn btn-primary"
+            type="button"
+            hidden={share.directory}
+            onClick={() => download('')}
+          >
+            下載檔案
+          </button>
+        </section>
+      )}
+
+    </main>
+  );
+}

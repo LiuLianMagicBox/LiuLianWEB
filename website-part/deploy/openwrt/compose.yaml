@@ -1,0 +1,47 @@
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:?Set MYSQL_IMAGE to the tested MySQL version}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:?}
+      MYSQL_USER: ${DB_USER:?}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+    volumes:
+      - type: bind
+        source: ${N100_MYSQL_DIR:?Set an existing absolute directory on the local SSD}
+        target: /var/lib/mysql
+        bind:
+          create_host_path: false
+    ports:
+      - "${BOT_DB_BIND_IP:-127.0.0.1}:${BOT_DB_PORT:-3307}:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --protocol=TCP -h 127.0.0.1 -u \"$$MYSQL_USER\" -D \"$$MYSQL_DATABASE\" -e 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    stop_grace_period: 1m
+
+  app:
+    image: ${WEBSITE_IMAGE:?Set WEBSITE_IMAGE to the tested release}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file: ${WEBSITE_ENV_FILE:-./website.env}
+    environment:
+      NODE_ENV: production
+      BIND_IP: 0.0.0.0
+      PORT: 3000
+      TRUST_PROXY: "1"
+      DISTRIBUTED_DEPLOYMENT: "true"
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:?}
+      DB_USER: ${DB_USER:?}
+      DB_PASSWORD: ${DB_PASSWORD:?}
+    ports:
+      - "127.0.0.1:${WEBSITE_PORT:-30012}:3000"
+    stop_grace_period: 45s

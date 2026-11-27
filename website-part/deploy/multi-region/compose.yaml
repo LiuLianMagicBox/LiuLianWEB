@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: ../../..
+    restart: unless-stopped
+    init: true
+    env_file: node.env
+    environment:
+      NODE_ENV: production
+      BIND_IP: 0.0.0.0
+      PORT: 3000
+      DISTRIBUTED_DEPLOYMENT: 'true'
+      TRUST_PROXY: '1'
+    volumes:
+      - ./config:/run/config:ro
+    stop_grace_period: 45s
+  gateway:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - '443:443'
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./tls:/etc/nginx/tls:ro
